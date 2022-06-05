@@ -4,7 +4,7 @@ from flask_sqlalchemy import SQLAlchemy  # , or_
 from flask_cors import CORS
 import random
 
-from models import setup_db, Book
+from models import setup_db, Book, db
 
 BOOKS_PER_SHELF = 8
 
@@ -44,8 +44,8 @@ def create_app(test_config=None):
         page = request.args.get('page', 1, type=int)
         start = (page-1) * 8
         end = start + 8
-        books = Book.query.all()
-        formatted_books= [book.format() for book in books]
+        books = Book.query.order_by(Book.id).all()
+        formatted_books = [book.format() for book in books]
 
         return jsonify({
             'success': True,
@@ -58,10 +58,62 @@ def create_app(test_config=None):
     #         and should follow API design principles regarding method and route.
     #         Response body keys: 'success'
     # TEST: When completed, you will be able to click on stars to update a book's rating and it will persist after refresh
+    @app.route('/books/<int:book_id>', methods = ['PATCH'])
+    def update_rating(book_id):
+        book = Book.query.get(book_id)
+        rating_object = request.json
+        rating = rating_object["rating"]
+        print(rating)
+        
+        if book is None:
+            abort(404)
+        else:    
+            try:
+                book.rating = rating
+                db.session.commit()
+                return jsonify({
+                    'success': True
+                })
+            except:
+                db.session.rollback()
+                abort(400)
+            finally:
+                db.session.close
+        
 
     # @TODO: Write a route that will delete a single book.
     #        Response body keys: 'success', 'deleted'(id of deleted book), 'books' and 'total_books'
     #        Response body keys: 'success', 'books' and 'total_books'
+    @app.route('/books/<int:book_id>', methods = ['DELETE'])
+    def delete_book(book_id):
+        book = Book.query.get(book_id)
+        if book is None:
+            abort(404)
+        else:
+            try:
+                db.session.delete(book)
+                db.session.commit()
+
+                books = Book.query.order_by(Book.id).all()
+                page = request.args.get('page', 1, type=int)
+                start = (page-1) * 8
+                end = start + 8
+                formatted_books= [book.format() for book in books]
+
+                return jsonify({
+                    'success':True,
+                    'deleted': book_id,
+                    'books': formatted_books[start:end],
+                    'total_books': len(formatted_books)
+                })
+            except:
+                db.session.rollback()
+                abort(400)
+            finally:
+                db.session.close()
+
+       
+
 
     # TEST: When completed, you will be able to delete a single book by clicking on the trashcan.
 
@@ -69,5 +121,44 @@ def create_app(test_config=None):
     #        Response body keys: 'success', 'created'(id of created book), 'books' and 'total_books'
     # TEST: When completed, you will be able to a new book using the form. Try doing so from the last page of books.
     #       Your new book should show up immediately after you submit it at the end of the page.
+
+    @app.route('/books/create', methods = ['GET','POST'])
+    def create_book():
+
+        data = request.json
+        print(data)
+
+        try:
+            book = Book(
+                title = data['title'],
+                author = data['author'], 
+                rating = data['rating']
+            )
+            db.session.add(book)
+            db.session.commit()
+
+            books = Book.query.order_by(Book.id).all()
+            page = request.args.get('page', 1, type=int)
+            start = (page-1) * 8
+            end = start + 8
+            formatted_books= [book.format() for book in books]
+            book = formatted_books[-1]
+            print(book)
+
+            return jsonify({
+                'success': True,
+                'created': book['id'],
+                'books': formatted_books[start:end],
+                'total_books': len(formatted_books)
+
+            })
+        except:
+            db.session.rollback()
+            abort(400)
+        finally:
+            db.session.close()
+
+       
+
 
     return app
